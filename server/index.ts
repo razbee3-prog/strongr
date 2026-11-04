@@ -18,7 +18,7 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 const MAX_BODY = 256_000;
-const LONG_CACHE = /^\/(videos|models|mediapipe|assets)\//;
+const HASHED = /^\/assets\//;
 
 async function serve(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "/", "http://x");
@@ -60,7 +60,7 @@ async function serve(req: IncomingMessage, res: ServerResponse) {
   const headers: Record<string, string | number> = {
     "content-type": MIME[extname(file)] || "application/octet-stream",
     "accept-ranges": "bytes",
-    "cache-control": LONG_CACHE.test(path) ? "public, max-age=31536000, immutable" : "no-cache",
+    "cache-control": HASHED.test(path) ? "public, max-age=31536000, immutable" : /^\/(videos|models|mediapipe)\//.test(path) ? "public, max-age=3600" : "no-cache",
   };
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
   if (range) {
