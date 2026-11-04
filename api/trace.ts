@@ -73,7 +73,7 @@ function invalid(p: Json, batch: Json[]): string | null {
   const t = Date.parse(start);
   if (!Number.isFinite(t) || Math.abs(Date.now() - t) > MAX_AGE_MS) return "bad start time";
   if (p.kind === "session_start") return null;
-  const startedHere = batch.some((q) => q.kind === "session_start" && q.session_id === sid && q.start_time === start);
+  const startedHere = batch.some((q) => q?.kind === "session_start" && q.session_id === sid && q.start_time === start);
   if (!startedHere && !tokenOk(sid, start, p.token)) return "bad token";
   if (p.kind === "block") {
     const b = p.block as Json | undefined;
