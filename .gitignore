@@ -1,0 +1,7 @@
+node_modules
+dist
+.vercel
+.env*
+public/mediapipe
+*.local
+.DS_Store
