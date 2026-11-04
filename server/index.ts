@@ -66,6 +66,10 @@ createServer(async (req, res) => {
   if (range) {
     const start = range[1] ? Number(range[1]) : st.size - Number(range[2]);
     const end = range[1] && range[2] ? Math.min(Number(range[2]), st.size - 1) : st.size - 1;
+    if (!(start >= 0 && start <= end && end < st.size)) {
+      res.writeHead(416, { "content-range": `bytes */${st.size}` }).end();
+      return;
+    }
     res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${st.size}`, "content-length": end - start + 1 });
     createReadStream(file, { start, end }).pipe(res);
     return;
