@@ -27,12 +27,11 @@ async function serve(req: IncomingMessage, res: ServerResponse) {
     let size = 0;
     for await (const c of req) {
       size += (c as Buffer).length;
-      if (size > MAX_BODY) {
-        res.writeHead(413, { "content-type": "application/json", connection: "close" }).end('{"error":"too large"}');
-        req.destroy();
-        return;
-      }
-      chunks.push(c as Buffer);
+      if (size <= MAX_BODY) chunks.push(c as Buffer);
+    }
+    if (size > MAX_BODY) {
+      res.writeHead(413, { "content-type": "application/json" }).end('{"error":"too large"}');
+      return;
     }
     let code = 200;
     await handler(
