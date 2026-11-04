@@ -46,6 +46,13 @@ export class AudioEngine {
     speechSynthesis.addEventListener?.("voiceschanged", pick);
   }
 
+  close() {
+    window.setTimeout(() => {
+      speechSynthesis.cancel();
+      void this.ctx?.close();
+    }, 4000);
+  }
+
   beep(freq = 880, durS = 0.15) {
     if (!this.ctx || !this.master) return;
     const osc = this.ctx.createOscillator();

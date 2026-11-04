@@ -33,6 +33,8 @@ export class Tracer {
   private chain: Promise<unknown> = Promise.resolve();
   private ended = false;
   private workoutId: string;
+  /** Server-issued HMAC for this session; required for block/session_end. */
+  private token = "";
 
   constructor(workoutId: string) {
     this.workoutId = workoutId;
@@ -53,7 +55,7 @@ export class Tracer {
     if (beacon) {
       const batch: Payload[] = pending ? [{ kind: "block", session_id: this.sessionId, session_start: this.startTime, block: pending }, endP] : [endP];
       this.log.push(...batch);
-      navigator.sendBeacon?.("/api/trace", new Blob([JSON.stringify(batch)], { type: "application/json" }));
+      navigator.sendBeacon?.("/api/trace", new Blob([JSON.stringify(batch.map((b) => ({ ...b, token: this.token })))], { type: "application/json" }));
       return;
     }
     if (pending) this.block(pending);
@@ -62,8 +64,13 @@ export class Tracer {
 
   private send(p: Payload) {
     this.log.push(p);
-    this.chain = this.chain.then(() =>
-      fetch("/api/trace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([p]), keepalive: true }).catch(() => undefined),
-    );
+    this.chain = this.chain.then(async () => {
+      try {
+        const r = await fetch("/api/trace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ ...p, token: this.token }]), keepalive: true });
+        if (p.kind === "session_start") this.token = ((await r.json()) as { token?: string }).token ?? "";
+      } catch {
+        /* tracing is best-effort */
+      }
+    });
   }
 }

@@ -1,9 +1,11 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { Client, RunTree } from "langsmith";
 
 type Json = Record<string, unknown>;
 
 interface Req {
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
   body?: unknown;
 }
 interface Res {
@@ -30,6 +32,54 @@ const root = (sessionId: string, start: string, extra: Partial<ConstructorParame
     client: getClient(),
     ...extra,
   });
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KINDS = new Set(["session_start", "block", "session_end"]);
+const MAX_ITEMS = 3;
+const MAX_EVENTS = 500;
+const MAX_BODY = 256_000;
+const MAX_AGE_MS = 6 * 3600_000;
+
+const secret = () => process.env.TRACE_SECRET || process.env.LANGSMITH_API_KEY || "";
+const sign = (sid: string, start: string) => createHmac("sha256", secret()).update(`${sid}|${start}`).digest("hex");
+const tokenOk = (sid: string, start: string, token: unknown) => {
+  if (typeof token !== "string") return false;
+  const a = Buffer.from(sign(sid, start));
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+const header = (req: Req, name: string) => {
+  const v = req.headers?.[name];
+  return Array.isArray(v) ? v[0] : v;
+};
+/** Browsers always send Origin on cross-site POSTs; reject anything not from our own host. */
+const sameOrigin = (req: Req) => {
+  const origin = header(req, "origin");
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === (header(req, "x-forwarded-host") ?? header(req, "host"));
+  } catch {
+    return false;
+  }
+};
+
+/** Returns an error string if the payload is malformed or not authorised for its session. */
+function invalid(p: Json): string | null {
+  if (!p || typeof p !== "object" || !KINDS.has(String(p.kind))) return "bad kind";
+  const sid = String(p.session_id);
+  if (!UUID.test(sid)) return "bad session_id";
+  const start = String(p.kind === "session_start" ? p.start_time : p.session_start);
+  const t = Date.parse(start);
+  if (!Number.isFinite(t) || Math.abs(Date.now() - t) > MAX_AGE_MS) return "bad start time";
+  if (p.kind === "session_start") return null;
+  if (!tokenOk(sid, start, p.token)) return "bad token";
+  if (p.kind === "block") {
+    const b = p.block as Json | undefined;
+    if (!b || !Array.isArray(b.events) || b.events.length > MAX_EVENTS) return "bad block";
+  }
+  return null;
+}
 
 async function handle(p: Json) {
   const sid = String(p.session_id);
@@ -71,15 +121,30 @@ async function handle(p: Json) {
 export default async function handler(req: Req, res: Res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   if (!process.env.LANGSMITH_API_KEY) return res.status(200).json({ ok: false, reason: "LANGSMITH_API_KEY not set" });
+  if (!sameOrigin(req)) return res.status(403).json({ error: "cross-origin" });
   let body = req.body;
-  if (typeof body === "string") body = JSON.parse(body);
+  try {
+    if (typeof body === "string") {
+      if (body.length > MAX_BODY) return res.status(413).json({ error: "too large" });
+      body = JSON.parse(body);
+    }
+  } catch {
+    return res.status(400).json({ error: "bad json" });
+  }
   const items = (Array.isArray(body) ? body : [body]) as Json[];
+  if (items.length > MAX_ITEMS) return res.status(400).json({ error: "too many items" });
+  for (const p of items) {
+    const err = invalid(p);
+    if (err) return res.status(400).json({ error: err });
+  }
   try {
     for (const p of items) await handle(p);
     await getClient().awaitPendingTraceBatches();
-    res.status(200).json({ ok: true, n: items.length });
+    const startItem = items.find((p) => p.kind === "session_start");
+    const token = startItem ? sign(String(startItem.session_id), String(startItem.start_time)) : undefined;
+    res.status(200).json({ ok: true, n: items.length, token });
   } catch (e) {
     console.error("trace error", e);
-    res.status(500).json({ ok: false, error: String(e) });
+    res.status(500).json({ ok: false, error: "trace failed" });
   }
 }

@@ -79,7 +79,11 @@ export default function App() {
   const trackerRef = useRef<PoseTracker | null>(null);
 
   useEffect(() => {
-    preloadVideos(setLoaded).then((u) => (urlsRef.current = u));
+    const preload = { cancelled: false };
+    preloadVideos(setLoaded).then((u) => {
+      if (preload.cancelled) return Object.values(u).forEach((url) => url && URL.revokeObjectURL(url));
+      urlsRef.current = u;
+    });
     createLandmarker()
       .then(({ landmarker, delegate }) => {
         landmarkerRef.current = landmarker;
@@ -87,6 +91,10 @@ export default function App() {
         setModelReady(true);
       })
       .catch((e) => setError(`Pose model failed to load: ${e}`));
+    return () => {
+      preload.cancelled = true;
+      setLoaded(0);
+    };
   }, []);
 
   const ready = modelReady && loaded === VIDEO_FILES.length;
@@ -135,10 +143,18 @@ export default function App() {
     });
     session.avgFps = () => tracker.avgFps;
     sessionRef.current = session;
+    const release = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      cam.srcObject = null;
+      void wake?.release().catch(() => undefined);
+      wake = null;
+      audio.close();
+    };
     window.addEventListener("pagehide", () => {
       const now = performance.now();
       if (session.phase !== "DONE" && session.phase !== "READY")
         tracer.end(false, session.total, session.blocksDone, tracker.avgFps, session.pendingSummary(now), true);
+      release();
     });
     setStage("running");
 
@@ -165,7 +181,10 @@ export default function App() {
         setFps(tracker.fps);
       }
       if (session.phase !== "DONE") requestAnimationFrame(loop);
-      else setSnap(session.snapshot(now));
+      else {
+        setSnap(session.snapshot(now));
+        release();
+      }
     };
     requestAnimationFrame(loop);
   }

@@ -20,6 +20,7 @@ Camera access needs HTTPS on a phone. To test on an iPhone locally, tunnel the d
 | `LANGSMITH_API_KEY` | your LangSmith API key (server only, never sent to the browser) |
 | `LANGSMITH_PROJECT` | project name, default `ai-trainer` |
 | `LANGSMITH_ENDPOINT` | optional, default `https://api.smith.langchain.com` |
+- `TRACE_SECRET` (optional): HMAC secret for per-session trace tokens; defaults to the LangSmith key.
 
 Without `LANGSMITH_API_KEY` the app still works; `/api/trace` just no-ops.
 

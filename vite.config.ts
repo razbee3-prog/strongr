@@ -20,7 +20,7 @@ const devApi = (): Plugin => ({
       const mod = await server.ssrLoadModule("/api/trace.ts");
       let code = 200;
       await mod.default(
-        { method: req.method, body: chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined },
+        { method: req.method, headers: req.headers, body: chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined },
         {
           status(c: number) { code = c; return this; },
           json(b: unknown) { res.statusCode = code; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(b)); },
