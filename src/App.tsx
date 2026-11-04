@@ -121,6 +121,7 @@ export default function App() {
     void trainerRef.current?.play().catch(() => undefined);
 
     let wake: WakeLockSentinel | null = null;
+    let released = false;
     const lock = async () => {
       try {
         wake = await navigator.wakeLock?.request("screen");
@@ -130,7 +131,7 @@ export default function App() {
     };
     void lock();
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && (!wake || wake.released)) void lock();
+      if (document.visibilityState === "visible" && !released && (!wake || wake.released)) void lock();
     });
 
     const tracer = new Tracer(workout.id);
@@ -144,6 +145,7 @@ export default function App() {
     session.avgFps = () => tracker.avgFps;
     sessionRef.current = session;
     const release = () => {
+      released = true;
       stream.getTracks().forEach((t) => t.stop());
       cam.srcObject = null;
       void wake?.release().catch(() => undefined);
