@@ -1,5 +1,5 @@
 import { createReadStream, statSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import handler from "../api/trace";
 
@@ -20,7 +20,7 @@ const MIME: Record<string, string> = {
 const MAX_BODY = 256_000;
 const LONG_CACHE = /^\/(videos|models|mediapipe|assets)\//;
 
-createServer(async (req, res) => {
+async function serve(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "/", "http://x");
   if (url.pathname === "/api/trace") {
     const chunks: Buffer[] = [];
@@ -76,4 +76,13 @@ createServer(async (req, res) => {
   }
   res.writeHead(200, { ...headers, "content-length": st.size });
   createReadStream(file).pipe(res);
+}
+
+createServer((req, res) => {
+  serve(req, res).catch((e) => {
+    const bad = e instanceof URIError;
+    if (!bad) console.error(e);
+    if (!res.headersSent) res.writeHead(bad ? 400 : 500).end();
+    else res.destroy();
+  });
 }).listen(PORT, () => console.log(`trainer on :${PORT}`));
