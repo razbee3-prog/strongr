@@ -32,5 +32,5 @@ const devApi = (): Plugin => ({
 
 export default defineConfig({
   plugins: [react(), copyWasm(), devApi()],
-  server: { host: true },
+  server: { host: true, allowedHosts: [".trycloudflare.com"] },
 });
