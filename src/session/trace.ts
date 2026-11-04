@@ -41,7 +41,11 @@ export class Tracer {
   }
 
   start() {
-    this.send({ kind: "session_start", session_id: this.sessionId, start_time: this.startTime, workout_id: this.workoutId, user_agent: navigator.userAgent });
+    this.send(this.startPayload());
+  }
+
+  private startPayload(): Payload {
+    return { kind: "session_start", session_id: this.sessionId, start_time: this.startTime, workout_id: this.workoutId, user_agent: navigator.userAgent };
   }
 
   block(block: BlockSummary) {
@@ -54,6 +58,8 @@ export class Tracer {
     const endP: Payload = { kind: "session_end", session_id: this.sessionId, session_start: this.startTime, end_time: new Date().toISOString(), completed, total_reps: totalReps, blocks_done: blocksDone, avg_fps: avgFps };
     if (beacon) {
       const batch: Payload[] = pending ? [{ kind: "block", session_id: this.sessionId, session_start: this.startTime, block: pending }, endP] : [endP];
+      // No token yet means session_start never completed; resend it so the server can authorise this batch.
+      if (!this.token) batch.unshift(this.startPayload());
       this.log.push(...batch);
       navigator.sendBeacon?.("/api/trace", new Blob([JSON.stringify(batch.map((b) => ({ ...b, token: this.token })))], { type: "application/json" }));
       return;

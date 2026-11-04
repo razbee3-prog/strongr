@@ -65,7 +65,7 @@ const sameOrigin = (req: Req) => {
 };
 
 /** Returns an error string if the payload is malformed or not authorised for its session. */
-function invalid(p: Json): string | null {
+function invalid(p: Json, batch: Json[]): string | null {
   if (!p || typeof p !== "object" || !KINDS.has(String(p.kind))) return "bad kind";
   const sid = String(p.session_id);
   if (!UUID.test(sid)) return "bad session_id";
@@ -73,7 +73,8 @@ function invalid(p: Json): string | null {
   const t = Date.parse(start);
   if (!Number.isFinite(t) || Math.abs(Date.now() - t) > MAX_AGE_MS) return "bad start time";
   if (p.kind === "session_start") return null;
-  if (!tokenOk(sid, start, p.token)) return "bad token";
+  const startedHere = batch.some((q) => q.kind === "session_start" && q.session_id === sid && q.start_time === start);
+  if (!startedHere && !tokenOk(sid, start, p.token)) return "bad token";
   if (p.kind === "block") {
     const b = p.block as Json | undefined;
     if (!b || !Array.isArray(b.events) || b.events.length > MAX_EVENTS) return "bad block";
@@ -133,7 +134,7 @@ export default async function handler(req: Req, res: Res) {
   const items = (Array.isArray(body) ? body : [body]) as Json[];
   if (items.length > MAX_ITEMS) return res.status(400).json({ error: "too many items" });
   for (const p of items) {
-    const err = invalid(p);
+    const err = invalid(p, items);
     if (err) return res.status(400).json({ error: err });
   }
   try {
