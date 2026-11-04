@@ -13,22 +13,28 @@ Camera access needs HTTPS on a phone. To test on an iPhone locally, tunnel the d
 
 `/api/trace` also runs under `vite dev` (see `vite.config.ts`), so tracing works locally if the env vars below are set in your shell.
 
-## Env vars (Vercel → Project → Settings → Environment Variables)
+## Env vars (server only)
 
 | Name | Value |
 | --- | --- |
 | `LANGSMITH_API_KEY` | your LangSmith API key (server only, never sent to the browser) |
 | `LANGSMITH_PROJECT` | project name, default `ai-trainer` |
 | `LANGSMITH_ENDPOINT` | optional, default `https://api.smith.langchain.com` |
-- `TRACE_SECRET` (optional): HMAC secret for per-session trace tokens; defaults to the LangSmith key.
+| `TRACE_SECRET` | optional HMAC secret for per-session trace tokens, defaults to the LangSmith key |
 
 Without `LANGSMITH_API_KEY` the app still works; `/api/trace` just no-ops.
 
 ## Deploy
 
+Live at https://trainer.167.71.17.98.sslip.io: a Docker container (`Dockerfile`, Node server in `server/index.ts` that serves `dist/` plus `/api/trace`) on the shared DigitalOcean droplet.
+
 ```bash
-npx vercel --prod
+rsync -az --delete --exclude node_modules --exclude dist --exclude .git ./ root@<droplet>:/opt/strongr/app/
+ssh root@<droplet> 'cd /opt/strongr/app && docker build -t strongr-trainer . && docker rm -f strongr-trainer; \
+  docker run -d --name strongr-trainer --restart unless-stopped --env-file /opt/strongr/.env --network noa_edge strongr-trainer'
 ```
+
+TLS and routing come from the Noa Caddy container (`noa-caddy-1`), which has a `trainer.<ip>.sslip.io { reverse_proxy strongr-trainer:3000 }` site block. `vercel.json` + `api/trace.ts` still work for a Vercel deploy (`npx vercel --prod`).
 
 ## How it fits together
 
