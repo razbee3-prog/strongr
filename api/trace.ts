@@ -124,10 +124,9 @@ export default async function handler(req: Req, res: Res) {
   if (!sameOrigin(req)) return res.status(403).json({ error: "cross-origin" });
   let body = req.body;
   try {
-    if (typeof body === "string") {
-      if (body.length > MAX_BODY) return res.status(413).json({ error: "too large" });
-      body = JSON.parse(body);
-    }
+    const raw = typeof body === "string" ? body : JSON.stringify(body ?? null);
+    if (raw.length > MAX_BODY) return res.status(413).json({ error: "too large" });
+    if (typeof body === "string") body = JSON.parse(body);
   } catch {
     return res.status(400).json({ error: "bad json" });
   }
