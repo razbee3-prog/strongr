@@ -158,6 +158,10 @@ export default function App() {
         tracer.end(false, session.total, session.blocksDone, tracker.avgFps, session.pendingSummary(now), true);
       release();
     });
+    // The camera/audio were torn down on pagehide; a bfcache restore can't resume them.
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) location.reload();
+    });
     setStage("running");
 
     let lastUi = 0;
