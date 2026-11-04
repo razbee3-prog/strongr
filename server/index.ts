@@ -17,13 +17,23 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
 };
+const MAX_BODY = 256_000;
 const LONG_CACHE = /^\/(videos|models|mediapipe|assets)\//;
 
 createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://x");
   if (url.pathname === "/api/trace") {
     const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
+    let size = 0;
+    for await (const c of req) {
+      size += (c as Buffer).length;
+      if (size > MAX_BODY) {
+        res.writeHead(413, { "content-type": "application/json", connection: "close" }).end('{"error":"too large"}');
+        req.destroy();
+        return;
+      }
+      chunks.push(c as Buffer);
+    }
     let code = 200;
     await handler(
       { method: req.method, headers: req.headers, body: chunks.length ? Buffer.concat(chunks).toString() : undefined },
