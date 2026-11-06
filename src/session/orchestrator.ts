@@ -149,6 +149,7 @@ export class Session {
     this.lastBodyAt += dt;
     this.cueAt += dt;
     this.cues.shift(dt);
+    this.detector?.reset();
     this.events.push({ type: "paused", t: new Date().toISOString(), duration_s: Math.round(dt / 100) / 10 });
     this.audio.resume();
     this.audio.say(LINE.resume, "trainer");
