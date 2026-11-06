@@ -82,6 +82,8 @@ export class AudioEngine {
   resume() {
     void this.ctx?.resume();
     speechSynthesis.resume();
+    const item = this.current;
+    if (item && !this.src) this.watchdog = window.setTimeout(() => this.current === item && this.finish(), 1500 + item.text.length * 90);
   }
 
   close() {
