@@ -1,0 +1,16 @@
+{
+  "id": "full-body-10",
+  "blocks": [
+    {"type":"exercise","exercise":"jumping_jacks","mode":"time","target_s":45,"count_reps":true},
+    {"type":"exercise","exercise":"squat","mode":"reps","target_reps":12,"cap_s":60,"form":true},
+    {"type":"exercise","exercise":"reverse_lunge","mode":"reps","target_reps":10,"cap_s":60,"form":true},
+    {"type":"rest","target_s":30},
+    {"type":"exercise","exercise":"jumping_jacks","mode":"time","target_s":45,"count_reps":true},
+    {"type":"exercise","exercise":"squat","mode":"reps","target_reps":12,"cap_s":60,"form":true},
+    {"type":"exercise","exercise":"reverse_lunge","mode":"reps","target_reps":10,"cap_s":60,"form":true},
+    {"type":"rest","target_s":30},
+    {"type":"exercise","exercise":"jumping_jacks","mode":"time","target_s":45,"count_reps":true},
+    {"type":"exercise","exercise":"squat","mode":"reps","target_reps":12,"cap_s":60,"form":true},
+    {"type":"exercise","exercise":"reverse_lunge","mode":"reps","target_reps":10,"cap_s":60,"form":true}
+  ]
+}
