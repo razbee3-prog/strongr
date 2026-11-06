@@ -26,7 +26,7 @@ Without `LANGSMITH_API_KEY` the app still works; `/api/trace` just no-ops.
 
 ## Deploy
 
-Live at https://trainer.167.71.17.98.sslip.io: a Docker container (`Dockerfile`, Node server in `server/index.ts` that serves `dist/` plus `/api/trace`) on the shared DigitalOcean droplet.
+Live at https://trainer-167-71-17-98.sslip.io: a Docker container (`Dockerfile`, Node server in `server/index.ts` that serves `dist/` plus `/api/trace`) on the shared DigitalOcean droplet.
 
 ```bash
 rsync -az --delete --exclude node_modules --exclude dist --exclude .git ./ root@<droplet>:/opt/strongr/app/
@@ -43,7 +43,9 @@ TLS and routing come from the Noa Caddy container (`noa-caddy-1`), which has a `
 - `src/session/orchestrator.ts` — state machine `READY → INTRO → COUNTDOWN → ACTIVE → OUTRO → REST/next → DONE`, advance rules, tracking-loss fallback, voice prompts.
 - `src/pose/` — One Euro smoothing, joint-angle features, rep detectors (squat / reverse lunge / jumping jacks), form rules.
 - `src/session/cuePolicy.ts` — gentle cue policy (2 of last 3 reps, 1 cue / 15 s, priority order, praise on fix).
-- `src/session/audio.ts` — single priority speech queue (countdown > trainer > cue > encouragement), beeps, ducking.
+- `src/session/audio.ts` — single priority speech queue (countdown > trainer > cue > encouragement), beeps, ducking, pause/resume.
+- `src/session/lines.ts` + `scripts/gen-voice.ts` — every trainer line, pre-recorded with ElevenLabs into `public/voice/` (`ELEVEN_LABS_KEY=... npm run voice`; only new lines are generated). Lines without a clip fall back to the browser's speech voice.
+- `api/evals.ts` — after each workout ends, the server scores it and attaches LangSmith feedback on the root run: `trace_structure`, `fps_at_least_20`, `cue_spacing`, `cue_timing`, `cue_persistence`, `cue_priority`, `praise_after_fix`, `privacy` (cue checks are skipped when no cue fired). `npm run evals -- --limit 20 [--dry]` (re)scores recent workouts; `npm test` checks the evals and squat sim offline.
 - `src/session/trace.ts` + `api/trace.ts` — event buffering and the LangSmith run tree (`workout_session` root → one child run per block, with `rep` / `cue_fired` / `cue_resolved` / `tracking_lost` events). No video, images or landmarks are sent.
 
 ## Add an exercise

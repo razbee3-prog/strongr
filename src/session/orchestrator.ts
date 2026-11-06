@@ -4,6 +4,7 @@ import type { Fault } from "../pose/formRules";
 import type { PoseFrame } from "../pose/tracker";
 import type { AudioEngine } from "./audio";
 import { CuePolicy } from "./cuePolicy";
+import { exName, LINE } from "./lines";
 import type { BlockSummary, TraceEvent, Tracer } from "./trace";
 
 export interface Block {
@@ -25,6 +26,7 @@ export type Phase = "READY" | "INTRO" | "COUNTDOWN" | "ACTIVE" | "OUTRO" | "REST
 
 export interface Snapshot {
   phase: Phase;
+  paused: boolean;
   blockIndex: number;
   title: string;
   /** Big number: seconds left, or "7 / 12". */
@@ -46,7 +48,6 @@ const BODY_READY_MS = 2000;
 const TRACKING_LOSS_MS = 3000;
 const CUE_VISUAL_MS = 4000;
 
-const exName = (b?: Block) => (b ? (b.type === "rest" ? "Rest" : EXERCISES[b.exercise!]?.name ?? b.exercise!) : "Finish");
 const blockDurS = (b: Block) => b.target_s ?? b.cap_s ?? 60;
 
 export class Session {
@@ -73,6 +74,7 @@ export class Session {
   private audio: AudioEngine;
   private tracer: Tracer;
   private setVideo: (file: string | null, dim: boolean) => void;
+  private pausedAt: number | null = null;
   avgFps = () => 0;
 
   constructor(workout: Workout, audio: AudioEngine, tracer: Tracer, setVideo: (file: string | null, dim: boolean) => void) {
@@ -92,13 +94,14 @@ export class Session {
 
   onPose(f: PoseFrame) {
     this.lastFrame = f;
+    if (this.pausedAt !== null) return;
     const now = f.tMs;
     if (f.fullBody) {
       this.lastBodyAt = now;
       this.bodySince ??= now;
     } else this.bodySince = null;
 
-    if (this.phase !== "ACTIVE" || !this.detector || !f.features || !f.fullBody) return;
+    if (this.pausedAt !== null || this.phase !== "ACTIVE" || !this.detector || !f.features || !f.fullBody) return;
     const rep = this.detector.update(f.features, now / 1000);
     if (!rep) return;
     this.reps++;
@@ -108,7 +111,7 @@ export class Session {
     this.events.push({ type: "rep", t: new Date().toISOString(), n: this.reps, min_knee_angle: Math.round(rep.minKnee), max_torso_tilt: Math.round(rep.maxTilt), faults });
     if (b.mode === "reps" && !this.fallback && !this.said3 && b.target_reps! - this.reps === 3) {
       this.said3 = true;
-      this.audio.say("3 more", "trainer");
+      this.audio.say(LINE.threeMore, "trainer");
     }
     if (!b.form) return;
     const d = this.cues.onRep(faults, now);
@@ -122,7 +125,37 @@ export class Session {
     }
   }
 
+  get paused() {
+    return this.pausedAt !== null;
+  }
+
+  /** Only once the workout is running (not while finding the body or after it's done). */
+  get canPause() {
+    return this.phase !== "READY" && this.phase !== "DONE";
+  }
+
+  pause(now: number) {
+    if (this.pausedAt !== null || !this.canPause) return;
+    this.pausedAt = now;
+    this.audio.pause();
+  }
+
+  resume(now: number) {
+    if (this.pausedAt === null) return;
+    const dt = now - this.pausedAt;
+    this.pausedAt = null;
+    // Paused time doesn't count toward the block timer, tracking loss, or the cue gap.
+    this.phaseStart += dt;
+    this.lastBodyAt += dt;
+    this.cueAt += dt;
+    this.cues.shift(dt);
+    this.events.push({ type: "paused", t: new Date().toISOString(), duration_s: Math.round(dt / 100) / 10 });
+    this.audio.resume();
+    this.audio.say(LINE.resume, "trainer");
+  }
+
   tick(now: number) {
+    if (this.pausedAt !== null) return;
     const el = now - this.phaseStart;
     switch (this.phase) {
       case "READY":
@@ -142,7 +175,7 @@ export class Session {
         }
         if (el >= COUNTDOWN_MS) {
           this.audio.beep(990, 0.3);
-          this.audio.say("Go!", "countdown");
+          this.audio.say(LINE.go, "countdown");
           this.startActive(now);
         }
         break;
@@ -154,7 +187,7 @@ export class Session {
         const left = this.block!.target_s! - el / 1000;
         if (!this.said10 && left <= 10) {
           this.said10 = true;
-          this.audio.say(`10 seconds. Get ready for ${exName(this.workout.blocks[this.i + 1]).toLowerCase()}`, "trainer");
+          this.audio.say(LINE.restTen(this.workout.blocks[this.i + 1]), "trainer");
         }
         if (left <= 0) this.endBlock("target", now);
         break;
@@ -194,6 +227,7 @@ export class Session {
     if (!b) {
       this.go("DONE", now);
       this.setVideo(null, false);
+      this.audio.say(LINE.done, "trainer");
       this.tracer.end(true, this.totalReps, this.workout.blocks.length, this.avgFps());
       return;
     }
@@ -208,21 +242,20 @@ export class Session {
       const nextDef = nextB?.exercise ? EXERCISES[nextB.exercise] : undefined;
       this.setVideo(nextDef?.video ?? null, true);
       this.go("REST", now);
-      this.audio.say(`Rest, ${b.target_s} seconds. Next up, ${exName(nextB).toLowerCase()}`, "trainer");
+      this.audio.say(LINE.rest(b, nextB), "trainer");
       return;
     }
     const def = this.def!;
     this.setVideo(def.video, false);
     this.go("INTRO", now);
-    const target = b.mode === "reps" ? `${b.target_reps} reps` : `${b.target_s} seconds`;
-    this.audio.say(def.intro ?? `${def.name}, ${target}`, "trainer");
+    this.audio.say(LINE.intro(b), "trainer");
   }
 
   private startActive(now: number) {
     this.go("ACTIVE", now);
     this.blockStartIso = new Date().toISOString();
     this.detector = this.def?.detector?.() ?? null;
-    this.cues = new CuePolicy();
+    this.cues.newBlock();
     this.cueAt = -Infinity;
     this.lastFaults = [];
     this.lastBodyAt = Math.max(this.lastBodyAt, now);
@@ -235,11 +268,11 @@ export class Session {
     if (b.mode === "reps" && !this.fallback && now - this.lastBodyAt > TRACKING_LOSS_MS) {
       this.fallback = true;
       this.events.push({ type: "tracking_lost", t: new Date().toISOString(), elapsed_s: Math.round(elS), reps_so_far: this.reps });
-      this.audio.say("I lost you for a sec, keep going", "trainer");
+      this.audio.say(LINE.lost, "trainer");
     }
     if (timed && !this.said10 && limit - elS <= 10 && limit > 15) {
       this.said10 = true;
-      this.audio.say("10 seconds left", "trainer");
+      this.audio.say(LINE.tenLeft, "trainer");
     }
     if (b.mode === "reps" && !this.fallback && this.reps >= b.target_reps!) return this.endBlock("target", now);
     if (elS >= limit) return this.endBlock(b.mode === "time" ? "target" : this.fallback ? "fallback" : "cap", now);
@@ -271,10 +304,11 @@ export class Session {
     const b = this.block!;
     if (b.type === "rest") return this.begin(this.i + 1, now);
     this.go("OUTRO", now);
-    this.audio.say(this.def!.outro, "trainer");
+    this.audio.say(LINE.outro(b), "trainer");
   }
 
-  snapshot(now: number): Snapshot {
+  snapshot(at: number): Snapshot {
+    const now = this.pausedAt ?? at;
     const b = this.block;
     const el = (now - this.phaseStart) / 1000;
     const f = this.lastFrame?.features ?? null;
@@ -303,6 +337,7 @@ export class Session {
     } else if (b && this.phase === "OUTRO") cur = 1;
     return {
       phase: this.phase,
+      paused: this.pausedAt !== null,
       blockIndex: this.i,
       title: this.phase === "READY" ? "Get in frame" : this.phase === "DONE" ? "Workout complete" : exName(b),
       main: this.phase === "DONE" ? `${this.totalReps}` : main,

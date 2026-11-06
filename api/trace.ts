@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Client, RunTree } from "langsmith";
+import { evaluateTrace } from "./evals";
 
 type Json = Record<string, unknown>;
 
@@ -82,6 +83,21 @@ function invalid(p: Json, batch: Json[]): string | null {
   return null;
 }
 
+const EVAL_DELAYS_MS = [15_000, 45_000, 120_000];
+/** Score a finished workout once LangSmith has ingested its block runs (best-effort; needs a long-lived server). */
+function scheduleEval(sid: string, minChildren: number, attempt = 0) {
+  setTimeout(async () => {
+    const last = attempt === EVAL_DELAYS_MS.length - 1;
+    try {
+      const r = await evaluateTrace(getClient(), project(), sid, { post: true, minChildren: last ? undefined : minChildren });
+      if (!r && !last) scheduleEval(sid, minChildren, attempt + 1);
+    } catch (e) {
+      console.error("eval error", e);
+      if (!last) scheduleEval(sid, minChildren, attempt + 1);
+    }
+  }, EVAL_DELAYS_MS[attempt]).unref?.();
+}
+
 async function handle(p: Json) {
   const sid = String(p.session_id);
   if (p.kind === "session_start") {
@@ -116,6 +132,7 @@ async function handle(p: Json) {
     r.outputs = { completed: p.completed, total_reps: p.total_reps, blocks_done: p.blocks_done, avg_fps: p.avg_fps, end_time: p.end_time };
     r.end_time = Date.parse(String(p.end_time));
     await r.patchRun();
+    if (process.env.TRACE_EVALS !== "0") scheduleEval(sid, Number(p.blocks_done) || 0);
   }
 }
 

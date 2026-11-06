@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "voice": "tsx scripts/gen-voice.ts",
+    "evals": "tsx scripts/evals.ts",
+    "test": "tsx scripts/evals-test.ts && tsx scripts/sim.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.2",
@@ -22,6 +25,7 @@
     "@vercel/node": "^29.0.1",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.89.0",
+    "tsx": "^4.21.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.5"
   }

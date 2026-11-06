@@ -4,6 +4,7 @@ import { EXERCISES } from "./exercises";
 import { createLandmarker, PoseTracker } from "./pose/tracker";
 import { AudioEngine } from "./session/audio";
 import { Session, type Snapshot, type Workout } from "./session/orchestrator";
+import { LINE } from "./session/lines";
 import { Tracer } from "./session/trace";
 import type { PoseLandmarker } from "@mediapipe/tasks-vision";
 import type { Pt } from "./pose/oneEuro";
@@ -59,6 +60,32 @@ async function preloadVideos(onProgress: (done: number) => void) {
   return urls;
 }
 
+/** Pre-recorded trainer voice clips (public/voice, made by scripts/gen-voice.ts). Missing clips fall back to speechSynthesis. */
+async function preloadVoice(): Promise<Record<string, ArrayBuffer>> {
+  try {
+    const r = await fetch("/voice/manifest.json");
+    if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return {};
+    const { lines } = (await r.json()) as { lines: Record<string, string> };
+    const out: Record<string, ArrayBuffer> = {};
+    await Promise.all(
+      Object.entries(lines).map(async ([text, file]) => {
+        const a = await fetch(`/voice/${file}`).catch(() => null);
+        if (a?.ok) out[text] = await a.arrayBuffer();
+      }),
+    );
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+const PauseIcon = () => (
+  <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor" aria-hidden><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+);
+const PlayIcon = () => (
+  <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor" aria-hidden><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.9-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14z" /></svg>
+);
+
 export default function App() {
   const [stage, setStage] = useState<"start" | "running">("start");
   const [loaded, setLoaded] = useState(0);
@@ -70,6 +97,7 @@ export default function App() {
   const [video, setVideo] = useState<{ src: string | null; dim: boolean; name: string }>({ src: null, dim: false, name: "" });
 
   const urlsRef = useRef<Record<string, string | null> | null>(null);
+  const voiceRef = useRef<Promise<Record<string, ArrayBuffer>> | null>(null);
   const landmarkerRef = useRef<PoseLandmarker | null>(null);
   const camRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -80,6 +108,7 @@ export default function App() {
 
   useEffect(() => {
     const preload = { cancelled: false };
+    voiceRef.current = preloadVoice();
     preloadVideos(setLoaded).then((u) => {
       if (preload.cancelled) return Object.values(u).forEach((url) => url && URL.revokeObjectURL(url));
       urlsRef.current = u;
@@ -107,6 +136,7 @@ export default function App() {
   async function start() {
     const audio = new AudioEngine();
     audio.unlock();
+    void voiceRef.current?.then((clips) => audio.load(clips));
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
@@ -163,6 +193,7 @@ export default function App() {
       if (e.persisted) location.reload();
     });
     setStage("running");
+    audio.say(LINE.ready, "trainer");
 
     let lastUi = 0;
     const loop = () => {
@@ -195,6 +226,21 @@ export default function App() {
     requestAnimationFrame(loop);
   }
 
+  function togglePause() {
+    const session = sessionRef.current;
+    const v = trainerRef.current;
+    if (!session) return;
+    const now = performance.now();
+    if (session.paused) {
+      session.resume(now);
+      if (v?.src) void v.play().catch(() => undefined);
+    } else {
+      session.pause(now);
+      v?.pause();
+    }
+    setSnap(session.snapshot(now));
+  }
+
   function downloadEvents() {
     const blob = new Blob([JSON.stringify(tracerRef.current?.log ?? [], null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -209,6 +255,12 @@ export default function App() {
       <div className={`trainer ${video.dim ? "dim" : ""}`}>
         <video ref={trainerRef} src={video.src ?? undefined} playsInline muted loop autoPlay preload="auto" />
         {stage === "running" && !video.src && s?.phase !== "READY" && <div className="placeholder">{video.name || s?.title}</div>}
+        {s?.paused && <div className="pausedTag">PAUSED</div>}
+        {stage === "running" && s && s.phase !== "READY" && s.phase !== "DONE" && (s.countdown === null || s.paused) && (
+          <button className={`playpause ${s.paused ? "isPaused" : ""}`} onClick={togglePause} aria-label={s.paused ? "Resume" : "Pause"}>
+            {s.paused ? <PlayIcon /> : <PauseIcon />}
+          </button>
+        )}
       </div>
 
       <div className={`pip ${stage === "running" ? "" : "hidden"} ${s?.cueActive ? "amber" : ""}`}>
@@ -238,7 +290,7 @@ export default function App() {
         </div>
       )}
 
-      {stage === "running" && s && s.countdown !== null && <div className="countdown">{s.countdown}</div>}
+      {stage === "running" && s && s.countdown !== null && !s.paused && <div className="countdown">{s.countdown}</div>}
       {stage === "running" && s && s.phase === "REST" && <div className="restTag">REST</div>}
 
       {stage === "running" && s && s.phase !== "READY" && (

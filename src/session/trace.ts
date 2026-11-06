@@ -1,5 +1,5 @@
 export interface TraceEvent {
-  type: "rep" | "cue_fired" | "cue_resolved" | "tracking_lost";
+  type: "rep" | "cue_fired" | "cue_resolved" | "tracking_lost" | "paused";
   t: string;
   [k: string]: unknown;
 }
