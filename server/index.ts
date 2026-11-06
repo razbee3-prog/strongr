@@ -60,7 +60,7 @@ async function serve(req: IncomingMessage, res: ServerResponse) {
   const headers: Record<string, string | number> = {
     "content-type": MIME[extname(file)] || "application/octet-stream",
     "accept-ranges": "bytes",
-    "cache-control": HASHED.test(path) ? "public, max-age=31536000, immutable" : /^\/(videos|voice|models|mediapipe)\//.test(path) ? "public, max-age=3600" : "no-cache",
+    "cache-control": HASHED.test(path) ? "public, max-age=31536000, immutable" : path.endsWith("/manifest.json") ? "no-cache" : /^\/(videos|voice|models|mediapipe)\//.test(path) ? "public, max-age=3600" : "no-cache",
   };
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
   if (range) {
