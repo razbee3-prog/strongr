@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "voice": "tsx scripts/gen-voice.ts",
     "evals": "tsx scripts/evals.ts",
-    "test": "tsx scripts/evals-test.ts && tsx scripts/sim.ts"
+    "test": "python3 evals/online/test_evaluators.py && tsx scripts/evals-test.ts && tsx scripts/sim.ts",
+    "evals:online": "python3 evals/online/setup.py"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.2",

@@ -132,7 +132,7 @@ async function handle(p: Json) {
     r.outputs = { completed: p.completed, total_reps: p.total_reps, blocks_done: p.blocks_done, avg_fps: p.avg_fps, end_time: p.end_time };
     r.end_time = Date.parse(String(p.end_time));
     await r.patchRun();
-    if (process.env.TRACE_EVALS !== "0") scheduleEval(sid, Number(p.blocks_done) || 0);
+    if (process.env.TRACE_EVALS === "1") scheduleEval(sid, Number(p.blocks_done) || 0);
   }
 }
 
