@@ -44,13 +44,13 @@ def main():
     sid = sessions[0]["id"]
     existing = {r["display_name"]: r["id"] for r in call("GET", f"/runs/rules?session_id={sid}") or []}
     for name, (f, flt) in RULES.items():
-        if name in existing:
-            call("DELETE", f"/runs/rules/{existing[name]}")
         body = {"display_name": name, "session_id": sid, "is_enabled": True, "sampling_rate": 1.0, "filter": flt,
                 "code_evaluators": [{"code": code(f), "language": "python"}]}
         if a.backfill_days:
             body["backfill_from"] = (datetime.now(timezone.utc) - timedelta(days=a.backfill_days)).isoformat()
         r = call("POST", "/runs/rules", body)
+        if name in existing:
+            call("DELETE", f"/runs/rules/{existing[name]}")
         print(f"{'replaced' if name in existing else 'created'} {name}: {r['id']}")
 
 
