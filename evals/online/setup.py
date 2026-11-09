@@ -2,7 +2,7 @@
 
   LANGSMITH_API_KEY=... python3 evals/online/setup.py [--project ai-trainer] [--backfill-days 7] [--print]
 """
-import argparse, json, os, pathlib, urllib.request
+import argparse, json, os, pathlib, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HERE = pathlib.Path(__file__).parent
@@ -38,7 +38,7 @@ def main():
         for name, (f, _) in RULES.items():
             print(f"# ==== {name}\n{code(f)}")
         return
-    sessions = call("GET", f"/sessions?name={a.project}")
+    sessions = call("GET", "/sessions?" + urllib.parse.urlencode({"name": a.project}))
     if not sessions:
         raise SystemExit(f"no LangSmith project named {a.project}")
     sid = sessions[0]["id"]
