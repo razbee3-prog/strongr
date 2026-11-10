@@ -24,7 +24,7 @@ type Payload =
   | { kind: "session_start"; session_id: string; start_time: string; workout_id: string; user_agent: string }
   | { kind: "block_start"; session_id: string; session_start: string; block: BlockStart }
   | { kind: "progress"; session_id: string; session_start: string; block: BlockSummary; total_reps: number; blocks_done: number; avg_fps: number }
-  | { kind: "block"; session_id: string; session_start: string; block: BlockSummary }
+  | { kind: "block"; session_id: string; session_start: string; block: BlockSummary; opened?: boolean }
   | { kind: "session_end"; session_id: string; session_start: string; end_time: string; completed: boolean; reason: EndReason; total_reps: number; blocks_done: number; avg_fps: number };
 
 export type BlockStart = Pick<BlockSummary, "index" | "type" | "exercise" | "mode" | "target_reps" | "target_s" | "cap_s" | "start_time">;
@@ -40,6 +40,8 @@ export class Tracer {
   private workoutId: string;
   /** Server-issued HMAC for this session; required for block/session_end. */
   private token = "";
+  /** Block indices whose block_start was accepted, so the end can update that run instead of creating it. */
+  private opened = new Set<number>();
 
   constructor(workoutId: string) {
     this.workoutId = workoutId;
@@ -65,7 +67,7 @@ export class Tracer {
   }
 
   block(block: BlockSummary) {
-    this.send({ kind: "block", session_id: this.sessionId, session_start: this.startTime, block });
+    this.send(() => ({ kind: "block", session_id: this.sessionId, session_start: this.startTime, block, opened: this.opened.has(block.index) }));
   }
 
   get isEnded() {
@@ -77,7 +79,7 @@ export class Tracer {
     this.ended = true;
     const endP: Payload = { kind: "session_end", session_id: this.sessionId, session_start: this.startTime, end_time: new Date().toISOString(), completed: reason === "completed", reason, total_reps: totalReps, blocks_done: blocksDone, avg_fps: avgFps };
     if (beacon) {
-      const batch: Payload[] = pending ? [{ kind: "block", session_id: this.sessionId, session_start: this.startTime, block: pending }, endP] : [endP];
+      const batch: Payload[] = pending ? [{ kind: "block", session_id: this.sessionId, session_start: this.startTime, block: pending, opened: this.opened.has(pending.index) }, endP] : [endP];
       // No token yet means session_start never completed; resend it so the server can authorise this batch.
       if (!this.token) batch.unshift(this.startPayload());
       this.log.push(...batch);
@@ -88,15 +90,20 @@ export class Tracer {
     this.send(endP);
   }
 
-  private send(p: Payload) {
-    this.log.push(p);
+  /** A function payload is built when its turn in the queue comes, after earlier responses have landed. */
+  private send(make: Payload | (() => Payload)) {
+    if (typeof make !== "function") this.log.push(make);
     this.chain = this.chain.then(async () => {
+      const p = typeof make === "function" ? make() : make;
+      if (typeof make === "function") this.log.push(p);
       try {
         const r = await fetch("/api/trace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ ...p, token: this.token }]), keepalive: true });
         if (p.kind === "session_start") this.token = ((await r.json()) as { token?: string }).token ?? "";
+        if (p.kind === "block_start" && r.ok) this.opened.add(p.block.index);
       } catch {
         /* tracing is best-effort */
       }
     });
   }
+
 }

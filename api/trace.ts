@@ -165,7 +165,9 @@ async function handle(p: Json) {
     const b = p.block as Json & { events: Json[] };
     const child = blockRun(sid, String(p.session_start), b);
     fill(child, b);
-    await child.patchRun();
+    // If block_start never landed there is no open run to update, so create the finished run instead.
+    if (p.opened === false) await child.postRun();
+    else await child.patchRun();
   } else if (p.kind === "session_end") {
     const r = root(sid, String(p.session_start));
     r.outputs = { status: p.completed ? "completed" : "ended_early", completed: p.completed, reason: p.reason, total_reps: p.total_reps, blocks_done: p.blocks_done, avg_fps: p.avg_fps, end_time: p.end_time };
