@@ -190,7 +190,7 @@ export default function App() {
     // iOS Safari often skips pagehide on lock/app switch, but reliably fires visibilitychange; the camera is lost either way.
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden" && !released) abandon("backgrounded");
-      else if (document.visibilityState === "visible" && released && tracer.isEnded && session.phase !== "DONE") location.reload();
+      else if (document.visibilityState === "visible" && released && session.phase !== "DONE") location.reload();
     });
     window.addEventListener("pagehide", () => {
       if (!released) abandon("page_closed");
