@@ -47,6 +47,7 @@ const OUTRO_MS = 1800;
 const BODY_READY_MS = 2000;
 const TRACKING_LOSS_MS = 3000;
 const CUE_VISUAL_MS = 4000;
+const PROGRESS_MS = 15_000;
 
 const blockDurS = (b: Block) => b.target_s ?? b.cap_s ?? 60;
 
@@ -75,6 +76,7 @@ export class Session {
   private tracer: Tracer;
   private setVideo: (file: string | null, dim: boolean) => void;
   private pausedAt: number | null = null;
+  private lastProgressAt = 0;
   avgFps = () => 0;
 
   constructor(workout: Workout, audio: AudioEngine, tracer: Tracer, setVideo: (file: string | null, dim: boolean) => void) {
@@ -157,6 +159,10 @@ export class Session {
 
   tick(now: number) {
     if (this.pausedAt !== null) return;
+    if (now - this.lastProgressAt >= PROGRESS_MS && (this.phase === "ACTIVE" || this.phase === "REST")) {
+      this.lastProgressAt = now;
+      this.tracer.progress(this.totalReps + this.reps, this.blocksDone, this.avgFps(), this.summary("aborted", now));
+    }
     const el = now - this.phaseStart;
     switch (this.phase) {
       case "READY":
@@ -229,7 +235,7 @@ export class Session {
       this.go("DONE", now);
       this.setVideo(null, false);
       this.audio.say(LINE.done, "trainer");
-      this.tracer.end(true, this.totalReps, this.workout.blocks.length, this.avgFps());
+      this.tracer.end("completed", this.totalReps, this.workout.blocks.length, this.avgFps());
       return;
     }
     this.said10 = false;
@@ -243,6 +249,7 @@ export class Session {
       const nextDef = nextB?.exercise ? EXERCISES[nextB.exercise] : undefined;
       this.setVideo(nextDef?.video ?? null, true);
       this.go("REST", now);
+      this.openBlockRun(now);
       this.audio.say(LINE.rest(b, nextB), "trainer");
       return;
     }
@@ -255,11 +262,18 @@ export class Session {
   private startActive(now: number) {
     this.go("ACTIVE", now);
     this.blockStartIso = new Date().toISOString();
+    this.openBlockRun(now);
     this.detector = this.def?.detector?.() ?? null;
     this.cues.newBlock();
     this.cueAt = -Infinity;
     this.lastFaults = [];
     this.lastBodyAt = Math.max(this.lastBodyAt, now);
+  }
+
+  private openBlockRun(now: number) {
+    const b = this.block!;
+    this.lastProgressAt = now;
+    this.tracer.blockStart({ index: this.i, type: b.type, exercise: b.exercise, mode: b.type === "rest" ? "time" : b.mode!, target_reps: b.target_reps, target_s: b.target_s, cap_s: b.cap_s, start_time: this.blockStartIso });
   }
 
   private tickActive(now: number, elS: number) {

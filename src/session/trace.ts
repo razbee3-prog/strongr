@@ -22,8 +22,13 @@ export interface BlockSummary {
 
 type Payload =
   | { kind: "session_start"; session_id: string; start_time: string; workout_id: string; user_agent: string }
+  | { kind: "block_start"; session_id: string; session_start: string; block: BlockStart }
+  | { kind: "progress"; session_id: string; session_start: string; block: BlockSummary; total_reps: number; blocks_done: number; avg_fps: number }
   | { kind: "block"; session_id: string; session_start: string; block: BlockSummary }
-  | { kind: "session_end"; session_id: string; session_start: string; end_time: string; completed: boolean; total_reps: number; blocks_done: number; avg_fps: number };
+  | { kind: "session_end"; session_id: string; session_start: string; end_time: string; completed: boolean; reason: EndReason; total_reps: number; blocks_done: number; avg_fps: number };
+
+export type BlockStart = Pick<BlockSummary, "index" | "type" | "exercise" | "mode" | "target_reps" | "target_s" | "cap_s" | "start_time">;
+export type EndReason = "completed" | "page_closed" | "backgrounded";
 
 /** Buffers events in the browser and ships them to /api/trace (no video, images, or landmarks). */
 export class Tracer {
@@ -48,14 +53,29 @@ export class Tracer {
     return { kind: "session_start", session_id: this.sessionId, start_time: this.startTime, workout_id: this.workoutId, user_agent: navigator.userAgent };
   }
 
+  /** Opens the block's run in LangSmith so an in-progress block is visible. */
+  blockStart(block: BlockStart) {
+    this.send({ kind: "block_start", session_id: this.sessionId, session_start: this.startTime, block });
+  }
+
+  /** Periodic snapshot of the running block, logged under its open run. */
+  progress(totalReps: number, blocksDone: number, avgFps: number, block: BlockSummary) {
+    if (this.ended) return;
+    this.send({ kind: "progress", session_id: this.sessionId, session_start: this.startTime, block, total_reps: totalReps, blocks_done: blocksDone, avg_fps: avgFps });
+  }
+
   block(block: BlockSummary) {
     this.send({ kind: "block", session_id: this.sessionId, session_start: this.startTime, block });
   }
 
-  end(completed: boolean, totalReps: number, blocksDone: number, avgFps: number, pending?: BlockSummary, beacon = false) {
+  get isEnded() {
+    return this.ended;
+  }
+
+  end(reason: EndReason, totalReps: number, blocksDone: number, avgFps: number, pending?: BlockSummary, beacon = false) {
     if (this.ended) return;
     this.ended = true;
-    const endP: Payload = { kind: "session_end", session_id: this.sessionId, session_start: this.startTime, end_time: new Date().toISOString(), completed, total_reps: totalReps, blocks_done: blocksDone, avg_fps: avgFps };
+    const endP: Payload = { kind: "session_end", session_id: this.sessionId, session_start: this.startTime, end_time: new Date().toISOString(), completed: reason === "completed", reason, total_reps: totalReps, blocks_done: blocksDone, avg_fps: avgFps };
     if (beacon) {
       const batch: Payload[] = pending ? [{ kind: "block", session_id: this.sessionId, session_start: this.startTime, block: pending }, endP] : [endP];
       // No token yet means session_start never completed; resend it so the server can authorise this batch.

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Client, RunTree } from "langsmith";
 import { evaluateTrace } from "./evals";
 
@@ -35,7 +35,7 @@ const root = (sessionId: string, start: string, extra: Partial<ConstructorParame
   });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const KINDS = new Set(["session_start", "block", "session_end"]);
+const KINDS = new Set(["session_start", "block_start", "progress", "block", "session_end"]);
 const MAX_ITEMS = 3;
 const MAX_EVENTS = 500;
 const MAX_BODY = 256_000;
@@ -76,10 +76,11 @@ function invalid(p: Json, batch: Json[]): string | null {
   if (p.kind === "session_start") return null;
   const startedHere = batch.some((q) => q?.kind === "session_start" && q.session_id === sid && q.start_time === start);
   if (!startedHere && !tokenOk(sid, start, p.token)) return "bad token";
-  if (p.kind === "block") {
-    const b = p.block as Json | undefined;
-    if (!b || !Array.isArray(b.events) || b.events.length > MAX_EVENTS) return "bad block";
+  const b = p.block as Json | undefined;
+  if (p.kind === "block" || p.kind === "progress") {
+    if (!b || !Array.isArray(b.events) || b.events.length > MAX_EVENTS || !Number.isInteger(b.index)) return "bad block";
   }
+  if (p.kind === "block_start" && (!b || !Number.isInteger(b.index))) return "bad block";
   return null;
 }
 
@@ -98,6 +99,37 @@ function scheduleEval(sid: string, minChildren: number, attempt = 0) {
   }, EVAL_DELAYS_MS[attempt]).unref?.();
 }
 
+/** Block run ids are derived from session + index, so start, progress, and end requests address the same run. */
+const blockId = (sid: string, index: unknown) => {
+  const h = createHash("sha256").update(`${sid}|block|${index}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
+
+const blockRun = (sid: string, start: string, b: Json) =>
+  root(sid, start).createChild({
+    id: blockId(sid, b.index),
+    name: b.type === "rest" ? `rest_${b.index}` : `block_${b.index}_${b.exercise}`,
+    run_type: "chain",
+    start_time: Date.parse(String(b.start_time)),
+    inputs: { index: b.index, type: b.type, exercise: b.exercise, mode: b.mode, target_reps: b.target_reps, target_s: b.target_s, cap_s: b.cap_s },
+    metadata: { exercise: b.exercise, mode: b.mode },
+    tags: [b.type === "rest" ? "rest" : "exercise"],
+  });
+
+function fill(child: RunTree, b: Json & { events: Json[] }) {
+  child.events = b.events.map((e) => ({ name: String(e.type), time: String(e.t), kwargs: e }));
+  child.outputs = {
+    ended_by: b.ended_by,
+    actual_reps: b.actual_reps,
+    actual_s: b.actual_s,
+    reps: b.events.filter((e) => e.type === "rep"),
+    cues: b.events.filter((e) => e.type === "cue_fired" || e.type === "cue_resolved"),
+    tracking_lost: b.events.filter((e) => e.type === "tracking_lost"),
+  };
+  child.extra = { ...child.extra, metadata: { ...(child.extra?.metadata as Json), ended_by: b.ended_by } };
+  child.end_time = Date.parse(String(b.end_time));
+}
+
 async function handle(p: Json) {
   const sid = String(p.session_id);
   if (p.kind === "session_start") {
@@ -106,30 +138,37 @@ async function handle(p: Json) {
       metadata: { workout_id: p.workout_id, user_agent: p.user_agent },
     });
     await r.postRun();
+  } else if (p.kind === "block_start") {
+    await blockRun(sid, String(p.session_start), p.block as Json).postRun();
+  } else if (p.kind === "progress") {
+    // LangSmith accepts one update per run, so progress is logged as small finished runs under the open block run.
+    const b = p.block as Json & { events: Json[] };
+    const now = Date.now();
+    const snap = blockRun(sid, String(p.session_start), b).createChild({
+      name: "progress",
+      run_type: "tool",
+      start_time: now,
+      end_time: now,
+      inputs: { index: b.index, exercise: b.exercise },
+      outputs: {
+        actual_reps: b.actual_reps,
+        actual_s: b.actual_s,
+        total_reps: p.total_reps,
+        blocks_done: p.blocks_done,
+        avg_fps: p.avg_fps,
+        cues: b.events.filter((e) => e.type === "cue_fired" || e.type === "cue_resolved").length,
+        tracking_lost: b.events.some((e) => e.type === "tracking_lost"),
+      },
+    });
+    await snap.postRun();
   } else if (p.kind === "block") {
     const b = p.block as Json & { events: Json[] };
-    const r = root(sid, String(p.session_start));
-    const child = r.createChild({
-      name: b.type === "rest" ? `rest_${b.index}` : `block_${b.index}_${b.exercise}`,
-      run_type: "chain",
-      start_time: Date.parse(String(b.start_time)),
-      inputs: { index: b.index, type: b.type, exercise: b.exercise, mode: b.mode, target_reps: b.target_reps, target_s: b.target_s, cap_s: b.cap_s },
-      metadata: { exercise: b.exercise, mode: b.mode, ended_by: b.ended_by },
-    });
-    child.events = b.events.map((e) => ({ name: String(e.type), time: String(e.t), kwargs: e }));
-    child.outputs = {
-      actual_reps: b.actual_reps,
-      actual_s: b.actual_s,
-      ended_by: b.ended_by,
-      reps: b.events.filter((e) => e.type === "rep"),
-      cues: b.events.filter((e) => e.type === "cue_fired" || e.type === "cue_resolved"),
-      tracking_lost: b.events.filter((e) => e.type === "tracking_lost"),
-    };
-    child.end_time = Date.parse(String(b.end_time));
-    await child.postRun();
+    const child = blockRun(sid, String(p.session_start), b);
+    fill(child, b);
+    await child.patchRun();
   } else if (p.kind === "session_end") {
     const r = root(sid, String(p.session_start));
-    r.outputs = { completed: p.completed, total_reps: p.total_reps, blocks_done: p.blocks_done, avg_fps: p.avg_fps, end_time: p.end_time };
+    r.outputs = { status: p.completed ? "completed" : "ended_early", completed: p.completed, reason: p.reason, total_reps: p.total_reps, blocks_done: p.blocks_done, avg_fps: p.avg_fps, end_time: p.end_time };
     r.end_time = Date.parse(String(p.end_time));
     await r.patchRun();
     if (process.env.TRACE_EVALS === "1") scheduleEval(sid, Number(p.blocks_done) || 0);

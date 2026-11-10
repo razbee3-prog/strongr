@@ -8,6 +8,9 @@ from datetime import datetime, timedelta, timezone
 HERE = pathlib.Path(__file__).parent
 WORKOUT = json.loads((HERE.parent.parent / "src/workouts/full-body-10.json").read_text())
 API = os.environ.get("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com") + "/api/v1"
+BLOCKS_DATASET = "ai-trainer-blocks"
+DATASET_RULE = "AI Trainer: collect blocks"
+DATASET_FILTER = 'and(eq(is_root, false), eq(run_type, "chain"), has(tags, "exercise"))'
 RULES = {
     "AI Trainer: block evals": ("block.py", 'and(eq(is_root, false), eq(run_type, "chain"))'),
     "AI Trainer: workout evals": ("workout.py", 'and(eq(is_root, true), eq(name, "workout_session"))'),
@@ -52,6 +55,18 @@ def main():
         if name in existing:
             call("DELETE", f"/runs/rules/{existing[name]}")
         print(f"{'replaced' if name in existing else 'created'} {name}: {r['id']}")
+    ds = call("GET", "/datasets?" + urllib.parse.urlencode({"name": BLOCKS_DATASET}))
+    ds_id = ds[0]["id"] if ds else call("POST", "/datasets", {
+        "name": BLOCKS_DATASET, "data_type": "kv",
+        "description": "Every finished exercise block from ai-trainer. Edit outputs.actual_reps to the true count to label rep accuracy."})["id"]
+    body = {"display_name": DATASET_RULE, "session_id": sid, "is_enabled": True, "sampling_rate": 1.0,
+            "filter": DATASET_FILTER, "add_to_dataset_id": ds_id}
+    if a.backfill_days:
+        body["backfill_from"] = (datetime.now(timezone.utc) - timedelta(days=a.backfill_days)).isoformat()
+    r = call("POST", "/runs/rules", body)
+    if DATASET_RULE in existing:
+        call("DELETE", f"/runs/rules/{existing[DATASET_RULE]}")
+    print(f"{'replaced' if DATASET_RULE in existing else 'created'} {DATASET_RULE} -> dataset {BLOCKS_DATASET}: {r['id']}")
 
 
 if __name__ == "__main__":
