@@ -28,7 +28,7 @@ type Payload =
   | { kind: "session_end"; session_id: string; session_start: string; end_time: string; completed: boolean; reason: EndReason; total_reps: number; blocks_done: number; avg_fps: number };
 
 export type BlockStart = Pick<BlockSummary, "index" | "type" | "exercise" | "mode" | "target_reps" | "target_s" | "cap_s" | "start_time">;
-export type EndReason = "completed" | "page_closed" | "backgrounded";
+export type EndReason = "completed" | "left_page";
 
 /** Buffers events in the browser and ships them to /api/trace (no video, images, or landmarks). */
 export class Tracer {

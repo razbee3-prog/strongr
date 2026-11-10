@@ -182,18 +182,18 @@ export default function App() {
       wake = null;
       audio.close();
     };
-    const abandon = (reason: "page_closed" | "backgrounded") => {
+    const abandon = () => {
       if (session.phase !== "DONE" && session.phase !== "READY")
-        tracer.end(reason, session.total, session.blocksDone, tracker.avgFps, session.pendingSummary(performance.now()), true);
+        tracer.end("left_page", session.total, session.blocksDone, tracker.avgFps, session.pendingSummary(performance.now()), true);
       release();
     };
-    // iOS Safari often skips pagehide on lock/app switch, but reliably fires visibilitychange; the camera is lost either way.
+    // iOS Safari often skips pagehide on lock/app switch but reliably fires visibilitychange, and closing fires both, so the two are not distinguished.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden" && !released) abandon("backgrounded");
+      if (document.visibilityState === "hidden" && !released) abandon();
       else if (document.visibilityState === "visible" && released && session.phase !== "DONE") location.reload();
     });
     window.addEventListener("pagehide", () => {
-      if (!released) abandon("page_closed");
+      if (!released) abandon();
     });
     // The camera/audio were torn down on pagehide; a bfcache restore can't resume them.
     window.addEventListener("pageshow", (e) => {
