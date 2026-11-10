@@ -161,7 +161,7 @@ export class Session {
     if (this.pausedAt !== null) return;
     if (now - this.lastProgressAt >= PROGRESS_MS && (this.phase === "ACTIVE" || this.phase === "REST")) {
       this.lastProgressAt = now;
-      this.tracer.progress(this.totalReps + this.reps, this.blocksDone, this.avgFps(), this.summary("aborted", now));
+      this.tracer.progress(this.totalReps + this.reps, this.blocksDone, this.avgFps(), { ...this.summary("aborted", now), events: [...this.events] });
     }
     const el = now - this.phaseStart;
     switch (this.phase) {
