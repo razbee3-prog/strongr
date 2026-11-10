@@ -1,0 +1,40 @@
+* { box-sizing: border-box; margin: 0; }
+html, body, #root { height: 100%; background: #000; color: #fff; font-family: -apple-system, system-ui, sans-serif; overscroll-behavior: none; }
+.app { position: fixed; inset: 0; overflow: hidden; }
+/* Trainer video fills the top 80%; the HUD lives in the bottom 20%. */
+.trainer { position: absolute; top: 0; left: 0; right: 0; height: 80%; overflow: hidden; border-radius: 0 0 24px 24px; background: #111; }
+.trainer video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trainer video { object-fit: cover; background: #111; }
+.trainer.dim video { filter: brightness(0.35) blur(2px); }
+.placeholder { position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; font-weight: 700; color: #666; }
+.pip { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; width: 30%; border-radius: 12px; overflow: hidden; border: 3px solid #22c55e; z-index: 5; background: #000; transition: border-color .2s; }
+.pip.amber { border-color: #f59e0b; }
+.pip.hidden { visibility: hidden; }
+.mirror { position: relative; transform: scaleX(-1); }
+.mirror video { display: block; width: 100%; height: auto; }
+.mirror canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.start, .ready { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; padding: 32px; text-align: center; background: rgba(0,0,0,.7); z-index: 4; }
+.start h1 { font-size: 40px; }
+.lead { font-size: 20px; color: #aaa; }
+.start button { margin-top: 12px; font-size: 22px; font-weight: 700; padding: 18px 36px; border-radius: 999px; border: 0; background: #22c55e; color: #000; }
+.start button:disabled { background: #444; color: #aaa; }
+.error { color: #f87171; }
+.ready p { font-size: 22px; max-width: 320px; }
+.ready .small { font-size: 15px; color: #bbb; }
+.ready .bar { width: 70%; }
+.bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; }
+.bar > div { height: 100%; background: #22c55e; transition: width .1s linear; }
+.hud { position: absolute; left: 0; right: 0; bottom: 0; height: 20%; display: flex; flex-direction: column; justify-content: center; padding: 8px 16px max(8px, env(safe-area-inset-bottom)); background: #000; z-index: 3; }
+.hud .row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+.hud .title { font-size: 26px; font-weight: 800; }
+.hud .next { font-size: 15px; color: #bbb; margin-top: 4px; }
+.hud .big { font-size: 52px; font-weight: 800; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.hud .big span { display: block; font-size: 14px; font-weight: 500; color: #bbb; }
+.countdown { position: absolute; top: 0; left: 0; right: 0; height: 80%; display: grid; place-items: center; font-size: 160px; font-weight: 900; z-index: 4; text-shadow: 0 4px 24px rgba(0,0,0,.6); }
+.restTag { position: absolute; top: 22%; left: 0; right: 0; text-align: center; font-size: 56px; font-weight: 900; letter-spacing: 6px; z-index: 2; }
+.debug { position: absolute; left: 8px; top: max(8px, env(safe-area-inset-top)); z-index: 6; background: rgba(0,0,0,.7); font: 12px/1.4 ui-monospace, monospace; padding: 8px; border-radius: 8px; max-width: 62%; }
+.debug button { margin: 6px 6px 0 0; font-size: 12px; padding: 4px 8px; }
+.playpause { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 104px; height: 104px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); background: rgba(0,0,0,.35); color: #fff; display: grid; place-items: center; z-index: 4; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: .7; transition: opacity .2s, transform .1s; -webkit-tap-highlight-color: transparent; }
+.playpause:active { transform: translate(-50%, -50%) scale(.94); }
+.playpause.isPaused { opacity: 1; background: #22c55e; border-color: #22c55e; color: #000; }
+.pausedTag { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; justify-content: center; padding-top: 22%; font-size: 40px; font-weight: 900; letter-spacing: 6px; z-index: 3; }
